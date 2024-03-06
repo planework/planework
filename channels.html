@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>channels</title>
+	<link rel="stylesheet" href="v-css-max.css">
+	<script src="vue.global.js"></script>
+	<script src="peerjs.min.js"></script>
+</head>
+
+<body>
+	<div id="app">
+		<div class="page">
+			<div class="view v-padding-sm">
+				<div class="view v-border-auxiliary-blue v-padding-md" style="overflow-y: auto;">
+					<div v-for="(item,key) in list" :key="key">
+						<div v-if="item.type == 'link'"
+							class="v-bg-auxiliary-blue v-border-auxiliary-yellow v-radius-xs v-padding-xs">
+							<a :href="getLink(item.value)" target="_blank" style="text-decoration: none;"
+								class="v-text-auxiliary-red">Keys:{{ getLink(item.value) }}</a>
+						</div>
+						<div v-if="item.type == 'text'"
+							class="v-bg-auxiliary-blue v-border-auxiliary-yellow v-radius-xs v-padding-xs">
+							{{item.value}}
+						</div>
+						<div v-if="item.type == 'image'"
+							class="v-bg-auxiliary-blue v-border-auxiliary-yellow v-radius-xs v-padding-xs">
+							<img :src="item.value" style="width: 100%;">
+						</div>
+						<div v-if="item.type == 'system'"
+							class="v-bg-auxiliary-blue v-border-auxiliary-yellow v-radius-xs v-padding-xs">
+							{{item.data}}
+						</div>
+					</div>
+				</div>
+				<div class="v-padding-xs"></div>
+
+				<div class="v-border-auxiliary-blue v-padding-sm">
+					<div class="view v-flex-x-start">
+						<div class="v-padding-right-md">
+							<input type="button" value="Ο"
+								class="v-border-auxiliary-blue v-padding-xs v-padding-x-lg v-padding-y-sm">
+						</div>
+						<div class="v-padding-right-md">
+							<input type="button" value="Image"
+								class="v-border-auxiliary-blue v-padding-xs v-padding-x-lg v-padding-y-sm">
+
+							<input type="file" accept="image/*" ref="fileInput" @change="sendImage">
+						</div>
+
+					</div>
+				</div>
+				<div class="v-padding-xs"></div>
+				<div class="v-border-auxiliary-blue v-padding-sm">
+					<div class="view v-flex-x-start">
+						<div class="v-flex-1 v-flex-x-start v-padding-right-md"><input type="text"
+								class="v-border-auxiliary-blue v-padding-xs v-padding-y-sm input" style="width: 100%;"
+								@keyup.enter="onSend"></div>
+						<div><input type="button" value="    Send   "
+								class="v-border-auxiliary-blue v-padding-xs v-padding-x-xl v-padding-y-sm"
+								@click="onSend"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+
+<script type="text/javascript">
+
+	Vue.createApp({
+		data() {
+			return {
+				UserID: null,
+				peer: null,
+				conn: null,
+				keys: null,
+				list: [],
+			}
+		},
+		mounted() {
+			this.UserID = localStorage.getItem('UserID')
+			if (this.UserID == null) {
+				this.UserID = this.getUserID()
+				localStorage.setItem('UserID', this.UserID)
+			}
+			this.peer = new Peer(this.UserID);
+			this.keys = this.getSearch().keys
+			this.peer.on('open', (keys) => {
+				this.logMessage({
+					type: 'link',
+					value: keys,
+					data: 'Sync Keys ' + keys
+				});
+				this.peer.on('connection', (other) => {
+					this.conn = other;
+					this.conn.on('data', this.handleMessage);
+					this.conn.on('open', () => {
+						this.logMessage({
+							type: 'system',
+							value: keys,
+							data: 'Connected to ' + other.peer + ' OK'
+						});
+					});
+				});
+				if (this.keys != null) {
+					this.logMessage({
+						type: 'system',
+						data: 'Connected to ' + this.keys
+					});
+					this.Connect(this.keys)
+				}
+			});
+
+		},
+		methods: {
+
+			getSearch() {
+				const queryString = window.location.search;
+				const urlParams = new URLSearchParams(queryString);
+				const params = {};
+				for (const [key, value] of urlParams) {
+					params[key] = value;
+				}
+				return params;
+			},
+			getUserID() {
+				let d = new Date().getTime();
+				if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+					d += performance.now();
+				}
+				const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+					const r = (d + Math.random() * 16) % 16 | 0;
+					d = Math.floor(d / 16);
+					return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+				});
+				return uuid;
+			},
+			getLink(keys) {
+				return window.location.href.replace(window.location.search, '') + "?keys=" + keys
+			},
+			Connect(keys) {
+				this.conn = this.peer.connect(keys);
+				this.conn.on('open', () => {
+					this.conn.on('data', this.handleMessage);
+					this.logMessage({
+						type: 'system',
+						data: 'Connected to ' + keys + ' OK'
+					});
+				});
+				this.conn.on('error', (err) => {
+					console.error('Connection error:', err);
+				});
+			},
+			logMessage(data) {
+				switch (data.type) {
+					case 'text':
+						this.list.push({
+							type: 'image',
+							value: data.value
+						});
+						break;
+					case 'image':
+						this.list.push({
+							type: 'image',
+							value: data.value
+						});
+						break;
+					case 'link':
+						this.list.push({
+							type: 'link',
+							value: data.value
+						});
+						break;
+				}
+
+			},
+			onSend(event) {
+				let value = document.querySelector('.input').value
+				this.SendMessage({
+					type: 'text',
+					value: value
+				})
+				document.querySelector('.input').value = ''
+			},
+			sendImage(event) {
+				const file = event.target.files[0];
+				const reader = new FileReader();
+				reader.onloadend = () => {
+					const imageData = reader.result;
+					this.SendMessage({
+						type: 'image',
+						value: imageData
+					});
+				};
+				reader.readAsDataURL(file);
+			},
+			SendMessage(data) {
+				if (this.conn !== null) {
+					this.conn.send(data)
+					this.logMessage(data);
+				}
+			},
+			handleMessage(data) {
+				switch (data.type) {
+					case 'text':
+						this.logMessage(data);
+						break;
+					case 'image':
+						this.logMessage(data);
+						break;
+				}
+			},
+		}
+	}).mount('#app')
+</script>
+
+</html>
